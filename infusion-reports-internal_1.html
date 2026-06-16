@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Infusion Custom Reports</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f7f7f5; --surface: #ffffff; --surface2: #f2f2ef;
+    --border: #e0dfd8; --border2: #cccbc4;
+    --text: #1a1a18; --text2: #5a5a56; --text3: #8a8a84;
+    --accent: #185fa5; --accent-bg: #e6f1fb; --accent-light: #b5d4f4;
+    --success: #1D9E75; --success-bg: #E1F5EE;
+    --danger: #A32D2D; --danger-bg: #FCEBEB;
+    --warn: #BA7517; --warn-bg: #FAEEDA;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; font-size: 14px; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 240px; min-width: 240px; background: var(--surface); border-right: 0.5px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-header { padding: 14px 16px 12px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .sidebar-header h1 { font-size: 13px; font-weight: 600; color: var(--text); }
+  .sidebar-header p { font-size: 11px; color: var(--text3); }
+
+  .company-list { flex: 1; overflow-y: auto; padding: 6px; }
+  .company-list-label { font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px 4px; display: block; }
+
+  .company-item { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--radius); cursor: pointer; transition: background 0.1s; }
+  .company-item:hover { background: var(--surface2); }
+  .company-item:hover .company-actions { opacity: 1; }
+  .company-item.active { background: var(--accent-bg); }
+  .company-item-name { flex: 1; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .company-item.active .company-item-name { color: var(--accent); font-weight: 500; }
+  .company-actions { opacity: 0; display: flex; gap: 2px; transition: opacity 0.1s; }
+  .icon-btn { background: none; border: none; cursor: pointer; padding: 3px; border-radius: 4px; color: var(--text3); display: flex; align-items: center; justify-content: center; }
+  .icon-btn:hover { background: var(--border); color: var(--text); }
+  .icon-btn svg { width: 13px; height: 13px; }
+
+  .company-empty { padding: 24px 16px; text-align: center; color: var(--text3); font-size: 12px; line-height: 1.6; }
+
+  .add-company-btn { margin: 6px; padding: 7px 10px; border-radius: var(--radius); border: 0.5px dashed var(--border2); background: none; color: var(--text2); font-size: 12px; cursor: pointer; width: calc(100% - 12px); display: flex; align-items: center; gap: 6px; transition: background 0.1s; }
+  .add-company-btn:hover { background: var(--surface2); }
+  .add-company-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  .nav-section { padding: 6px; border-top: 0.5px solid var(--border); }
+  .nav-section label { font-size: 11px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; display: block; padding: 4px 8px 4px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius); cursor: pointer; font-size: 13px; color: var(--text2); transition: background 0.1s; }
+  .nav-item:hover { background: var(--surface2); }
+  .nav-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 500; }
+  .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+  /* ── Main ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .toolbar { padding: 11px 20px; background: var(--surface); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 48px; }
+  .toolbar h2 { font-size: 15px; font-weight: 600; }
+  .toolbar-company { font-size: 12px; color: var(--text3); }
+  .toolbar-spacer { flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; transition: background 0.1s; white-space: nowrap; }
+  .btn:hover { background: var(--surface2); } .btn:active { opacity: 0.8; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn svg { width: 14px; height: 14px; }
+
+  .filters { padding: 10px 20px; background: var(--surface2); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .filter-group { display: flex; align-items: center; gap: 6px; }
+  .filter-group label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  .filter-group input[type=date], .filter-group select { font-size: 12px; padding: 5px 8px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+  .filter-group select { min-width: 130px; }
+
+  .content { flex: 1; overflow: auto; padding: 20px; }
+
+  .status-bar { padding: 5px 20px; background: var(--surface); border-top: 0.5px solid var(--border); font-size: 11px; color: var(--text3); min-height: 26px; display: flex; align-items: center; }
+  .status-bar.loading { color: var(--accent); }
+  .status-bar.error { color: var(--danger); }
+
+  /* ── Welcome / empty states ── */
+  .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; gap: 12px; color: var(--text3); }
+  .welcome svg { width: 44px; height: 44px; opacity: 0.25; }
+  .welcome h3 { font-size: 15px; font-weight: 500; color: var(--text2); }
+  .welcome p { font-size: 12px; max-width: 280px; line-height: 1.6; }
+  .welcome .btn { margin-top: 4px; }
+
+  /* ── Modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--surface); border-radius: var(--radius-lg); border: 0.5px solid var(--border); width: 420px; max-width: calc(100vw - 40px); overflow: hidden; }
+  .modal-header { padding: 16px 20px 12px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .modal-header h3 { font-size: 14px; font-weight: 600; }
+  .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .modal-footer { padding: 12px 20px; border-top: 0.5px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--text2); }
+  .field input { font-size: 13px; padding: 7px 10px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--surface2); color: var(--text); width: 100%; }
+  .field input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+  .field input.mono { font-family: monospace; font-size: 12px; }
+  .field-hint { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { opacity: 0.9; background: var(--accent); }
+  .btn-danger { color: var(--danger); border-color: #f7c1c1; }
+  .btn-danger:hover { background: var(--danger-bg); }
+  .field-error { font-size: 11px; color: var(--danger); margin-top: 2px; display: none; }
+  .field-error.show { display: block; }
+
+  /* ── Report output ── */
+  .report-wrap { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .report-title-bar { padding: 12px 16px; border-bottom: 0.5px solid var(--border); }
+  .report-title-bar h3 { font-size: 13px; font-weight: 600; }
+  .report-title-bar p { font-size: 11px; color: var(--text3); }
+  .report-meta { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .meta-chip { background: var(--surface2); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 3px 9px; font-size: 11px; color: var(--text2); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: var(--surface2); padding: 7px 10px; text-align: left; font-weight: 500; font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; border-bottom: 0.5px solid var(--border); }
+  th.num { text-align: right; }
+  td { padding: 6px 10px; border-bottom: 0.5px solid var(--border); vertical-align: top; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--accent-bg); }
+  .row-group-header td { background: var(--surface2); font-weight: 600; font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; padding: 5px 10px; border-top: 0.5px solid var(--border); }
+  .row-status-header td { background: var(--accent-bg); font-weight: 500; font-size: 11px; color: var(--accent); padding: 4px 10px; }
+  .row-status-subtotal td { background: #f0f7ff; font-weight: 500; font-size: 11px; color: var(--accent); border-top: 0.5px solid var(--accent-light); }
+  .row-subtotal td { background: #fffbf2; font-weight: 500; font-size: 11px; border-top: 0.5px solid var(--border); color: var(--text2); }
+  .row-total td { background: var(--surface2); font-weight: 600; border-top: 1px solid var(--border2); }
+  .error-box { background: var(--danger-bg); border: 0.5px solid #f7c1c1; border-radius: var(--radius-lg); padding: 16px 20px; color: var(--danger); }
+  .error-box h4 { font-size: 13px; margin-bottom: 4px; }
+  .error-box p { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+  .warn-box { background: var(--warn-bg); border: 0.5px solid #FAC775; border-radius: var(--radius); padding: 7px 12px; font-size: 11px; color: var(--warn); margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div>
+        <h1>Infusion Reports</h1>
+        <p style="margin-top:2px">Internal — Devine Technology</p>
+      </div>
+    </div>
+
+    <div class="company-list" id="companyList">
+      <span class="company-list-label">Companies</span>
+      <!-- populated by JS -->
+    </div>
+
+    <button class="add-company-btn" onclick="openAddCompany()">
+      <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg>
+      Add company
+    </button>
+
+    <nav class="nav-section">
+      <label>Reports</label>
+      <div class="nav-item active" data-report="jmcomp2" onclick="selectReport('jmcomp2',this)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/></svg>
+        Job Costings
+      </div>
+      <div class="nav-item" data-report="jobtypeinv" onclick="selectReport('jobtypeinv',this)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 12 L6 7 L9 10 L12 5 L14 7"/><rect x="1" y="1" width="14" height="14" rx="2"/></svg>
+        Job Sales by Type
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <div class="toolbar">
+      <div>
+        <h2 id="reportTitle">Job Costings</h2>
+        <span class="toolbar-company" id="toolbarCompany"></span>
+      </div>
+      <span class="toolbar-spacer"></span>
+      <button class="btn" onclick="runReport()" id="runBtn">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="3,2 12,7 3,12"/></svg>
+        Run report
+      </button>
+      <button class="btn" onclick="exportExcel()" id="xlsBtn" disabled>
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="12" height="10" rx="1.5"/><line x1="5" y1="2" x2="5" y2="12"/><line x1="9" y1="2" x2="9" y2="12"/><line x1="1" y1="7" x2="13" y2="7"/></svg>
+        Excel
+      </button>
+      <button class="btn" onclick="exportPDF()" id="pdfBtn" disabled>
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 1h6l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z"/><polyline points="9,1 9,4 12,4"/></svg>
+        PDF
+      </button>
+    </div>
+
+    <div class="filters" id="filtersBar"></div>
+
+    <div class="content" id="content">
+      <div class="welcome">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="4" width="36" height="40" rx="3"/><line x1="14" y1="16" x2="34" y2="16"/><line x1="14" y1="24" x2="34" y2="24"/><line x1="14" y1="32" x2="24" y2="32"/></svg>
+        <h3>No company selected</h3>
+        <p>Add a company using the button in the sidebar, then select it to run reports.</p>
+        <button class="btn" onclick="openAddCompany()">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg>
+          Add company
+        </button>
+      </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">Ready</div>
+  </main>
+</div>
+
+<!-- ── Add / Edit Company Modal ── -->
+<div class="modal-overlay" id="companyModal" style="display:none" onclick="handleModalOverlayClick(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add company</h3>
+      <button class="icon-btn" onclick="closeModal()">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="f_name">Company name</label>
+        <input type="text" id="f_name" placeholder="Vista Auto Glass">
+        <span class="field-error" id="e_name">Please enter a company name</span>
+      </div>
+      <div class="field">
+        <label for="f_licensee">Licensee UUID</label>
+        <input type="text" id="f_licensee" class="mono" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        <span class="field-hint">Permanent org UUID from Infusion settings</span>
+        <span class="field-error" id="e_licensee">Please enter a valid UUID</span>
+      </div>
+      <div class="field">
+        <label for="f_session">Session UUID</label>
+        <input type="text" id="f_session" class="mono" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        <span class="field-hint">Copy from Infusion — does not expire</span>
+        <span class="field-error" id="e_session">Please enter a valid UUID</span>
+      </div>
+      <div class="field">
+        <label for="f_apibase">API base URL</label>
+        <input type="text" id="f_apibase" class="mono" placeholder="https://app.infusionbusinesssoftware.com/api">
+        <span class="field-hint">Leave as default unless your server differs</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="deleteBtn" onclick="deleteCompany()" style="display:none;margin-right:auto">Delete</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCompany()">Save company</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULT_API_BASE = 'https://app.infusionbusinesssoftware.com/api';
+const STORAGE_KEY = 'infusion_companies';
+const ACTIVE_KEY  = 'infusion_active_company';
+
+// ── Company store ─────────────────────────────────────────────
+let companies = [];
+let activeCompanyId = null;
+let editingCompanyId = null;
+let reportType = 'jmcomp2';
+let reportData = null;
+let jobTypes = [];
+
+function loadCompanies() {
+  try { companies = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { companies = []; }
+  activeCompanyId = localStorage.getItem(ACTIVE_KEY) || null;
+  if (activeCompanyId && !companies.find(c => c.id === activeCompanyId)) activeCompanyId = null;
+}
+
+function saveCompanies() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(companies));
+  if (activeCompanyId) localStorage.setItem(ACTIVE_KEY, activeCompanyId);
+  else localStorage.removeItem(ACTIVE_KEY);
+}
+
+function getActive() {
+  return companies.find(c => c.id === activeCompanyId) || null;
+}
+
+// ── Render sidebar company list ────────────────────────────────
+function renderCompanyList() {
+  const list = document.getElementById('companyList');
+  const label = list.querySelector('.company-list-label');
+  list.innerHTML = '';
+  list.appendChild(label);
+
+  if (companies.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'company-empty';
+    empty.textContent = 'No companies added yet.';
+    list.appendChild(empty);
+    return;
+  }
+
+  companies.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'company-item' + (c.id === activeCompanyId ? ' active' : '');
+    item.innerHTML = `
+      <span class="company-item-name">${esc(c.name)}</span>
+      <div class="company-actions">
+        <button class="icon-btn" title="Edit" onclick="event.stopPropagation(); openEditCompany('${c.id}')">
+          <svg viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 2l2 2L4 11H2V9L9 2z"/></svg>
+        </button>
+      </div>`;
+    item.addEventListener('click', () => selectCompany(c.id));
+    list.appendChild(item);
+  });
+}
+
+function selectCompany(id) {
+  activeCompanyId = id;
+  saveCompanies();
+  renderCompanyList();
+  reportData = null;
+  jobTypes = [];
+  setExportEnabled(false);
+  const c = getActive();
+  document.getElementById('toolbarCompany').textContent = c ? c.name : '';
+  showReadyState();
+  loadJobTypes();
+}
+
+function showReadyState() {
+  const c = getActive();
+  if (!c) {
+    document.getElementById('content').innerHTML = `
+      <div class="welcome">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="4" width="36" height="40" rx="3"/><line x1="14" y1="16" x2="34" y2="16"/><line x1="14" y1="24" x2="34" y2="24"/><line x1="14" y1="32" x2="24" y2="32"/></svg>
+        <h3>No company selected</h3>
+        <p>Add a company or select one from the sidebar.</p>
+        <button class="btn" onclick="openAddCompany()">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg>
+          Add company
+        </button>
+      </div>`;
+  } else {
+    document.getElementById('content').innerHTML = `
+      <div class="welcome">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="6" width="32" height="36" rx="3"/><line x1="16" y1="16" x2="32" y2="16"/><line x1="16" y1="22" x2="32" y2="22"/><line x1="16" y1="28" x2="24" y2="28"/></svg>
+        <h3>Set filters and run the report</h3>
+        <p>Adjust the date range above, then click Run report.</p>
+      </div>`;
+  }
+}
+
+// ── Modal ──────────────────────────────────────────────────────
+function openAddCompany() {
+  editingCompanyId = null;
+  document.getElementById('modalTitle').textContent = 'Add company';
+  document.getElementById('f_name').value = '';
+  document.getElementById('f_licensee').value = '';
+  document.getElementById('f_session').value = '';
+  document.getElementById('f_apibase').value = DEFAULT_API_BASE;
+  document.getElementById('deleteBtn').style.display = 'none';
+  clearFieldErrors();
+  document.getElementById('companyModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('f_name').focus(), 50);
+}
+
+function openEditCompany(id) {
+  const c = companies.find(x => x.id === id);
+  if (!c) return;
+  editingCompanyId = id;
+  document.getElementById('modalTitle').textContent = 'Edit company';
+  document.getElementById('f_name').value = c.name;
+  document.getElementById('f_licensee').value = c.licenseeUuid;
+  document.getElementById('f_session').value = c.sessionUuid;
+  document.getElementById('f_apibase').value = c.apiBase || DEFAULT_API_BASE;
+  document.getElementById('deleteBtn').style.display = 'inline-flex';
+  clearFieldErrors();
+  document.getElementById('companyModal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('companyModal').style.display = 'none';
+}
+
+function handleModalOverlayClick(e) {
+  if (e.target === document.getElementById('companyModal')) closeModal();
+}
+
+function clearFieldErrors() {
+  ['e_name','e_licensee','e_session'].forEach(id => document.getElementById(id).classList.remove('show'));
+}
+
+function saveCompany() {
+  clearFieldErrors();
+  const name       = document.getElementById('f_name').value.trim();
+  const licenseeUuid = document.getElementById('f_licensee').value.trim();
+  const sessionUuid  = document.getElementById('f_session').value.trim();
+  const apiBase      = document.getElementById('f_apibase').value.trim() || DEFAULT_API_BASE;
+
+  let valid = true;
+  if (!name) { document.getElementById('e_name').classList.add('show'); valid = false; }
+  if (!isValidUUID(licenseeUuid)) { document.getElementById('e_licensee').classList.add('show'); valid = false; }
+  if (!isValidUUID(sessionUuid))  { document.getElementById('e_session').classList.add('show'); valid = false; }
+  if (!valid) return;
+
+  if (editingCompanyId) {
+    const idx = companies.findIndex(c => c.id === editingCompanyId);
+    if (idx >= 0) companies[idx] = { ...companies[idx], name, licenseeUuid, sessionUuid, apiBase };
+  } else {
+    const id = 'co_' + Date.now();
+    companies.push({ id, name, licenseeUuid, sessionUuid, apiBase });
+    // Auto-select if it's the first company
+    if (companies.length === 1) {
+      activeCompanyId = id;
+      document.getElementById('toolbarCompany').textContent = name;
+    }
+  }
+
+  saveCompanies();
+  renderCompanyList();
+  closeModal();
+
+  // Reload job types for the now-active company
+  if (activeCompanyId) { jobTypes = []; loadJobTypes(); }
+}
+
+function deleteCompany() {
+  if (!editingCompanyId) return;
+  if (!confirm('Remove this company? This cannot be undone.')) return;
+  companies = companies.filter(c => c.id !== editingCompanyId);
+  if (activeCompanyId === editingCompanyId) {
+    activeCompanyId = companies.length > 0 ? companies[0].id : null;
+  }
+  saveCompanies();
+  renderCompanyList();
+  closeModal();
+  reportData = null;
+  jobTypes = [];
+  setExportEnabled(false);
+  document.getElementById('toolbarCompany').textContent = activeCompanyId ? getActive()?.name || '' : '';
+  showReadyState();
+  if (activeCompanyId) loadJobTypes();
+}
+
+// ── Report selection ───────────────────────────────────────────
+function selectReport(id, el) {
+  reportType = id; reportData = null;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('reportTitle').textContent = id === 'jmcomp2' ? 'Job Costings' : 'Job Sales by Type';
+  buildFilters();
+  setExportEnabled(false);
+  if (getActive()) showReadyState();
+}
+
+// ── Filters ───────────────────────────────────────────────────
+function buildFilters() {
+  const bar = document.getElementById('filtersBar');
+  const today = new Date();
+  const from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+  const to   = today.toISOString().slice(0,10);
+  if (reportType === 'jmcomp2') {
+    bar.innerHTML = `
+      <div class="filter-group"><label>From</label><input type="date" id="f_from" value="${from}"></div>
+      <div class="filter-group"><label>To</label><input type="date" id="f_to" value="${to}"></div>
+      <div class="filter-group"><label>Job type</label><select id="f_type"><option value="">All types</option></select></div>
+      <div class="filter-group"><label>Inv. status</label>
+        <select id="f_status">
+          <option value="">All statuses</option>
+          <option value="INVOICED">Invoiced</option>
+          <option value="READY_TO_INVOICE">Ready to invoice</option>
+          <option value="AWAITING_APPROVAL">Awaiting approval</option>
+          <option value="NOT_READY">Not ready</option>
+        </select>
+      </div>
+      <div class="filter-group"><label>Open/Closed</label>
+        <select id="f_open"><option value="">All</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select>
+      </div>`;
+  } else {
+    bar.innerHTML = `
+      <div class="filter-group"><label>Invoice date from</label><input type="date" id="f_from" value="${from}"></div>
+      <div class="filter-group"><label>To</label><input type="date" id="f_to" value="${to}"></div>
+      <div class="filter-group"><label>Job type</label><select id="f_type"><option value="">All types</option></select></div>
+      <div class="filter-group"><label>Open/Closed</label>
+        <select id="f_open"><option value="">All</option><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select>
+      </div>`;
+  }
+  populateTypeDropdown();
+}
+
+function populateTypeDropdown() {
+  const sel = document.getElementById('f_type');
+  if (!sel) return;
+  while (sel.options.length > 1) sel.remove(1);
+  jobTypes.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t.uuid; o.textContent = t.name; sel.appendChild(o);
+  });
+}
+
+async function loadJobTypes() {
+  const c = getActive();
+  if (!c) return;
+  try {
+    const res = await apiFetch(c, '/ext/v1/jobs/types');
+    if (Array.isArray(res)) {
+      jobTypes = res.filter(t => !t.deletedTimestamp).sort((a,b) => a.name.localeCompare(b.name));
+      populateTypeDropdown();
+    }
+  } catch(e) {}
+}
+
+// ── API ───────────────────────────────────────────────────────
+async function apiFetch(company, path, params = {}) {
+  const base = company.apiBase || DEFAULT_API_BASE;
+
+  // Build query string manually so 'where' clauses with >= and <= are NOT
+  // double-encoded — Infusion requires them as literal characters in the URL
+  const parts = [];
+  parts.push('sessionUuid=' + encodeURIComponent(company.sessionUuid));
+  parts.push('licenseeUuid=' + encodeURIComponent(company.licenseeUuid));
+  Object.entries(params).forEach(([k, v]) => {
+    if (Array.isArray(v)) {
+      // where clauses: encode spaces and quotes but leave > < = intact
+      v.forEach(item => parts.push(k + '=' + encodeWhereClause(item)));
+    } else {
+      parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+    }
+  });
+
+  const url = base + path + '?' + parts.join('&');
+  const resp = await fetch(url);
+  if (!resp.ok) { const txt = await resp.text(); throw new Error(`API ${resp.status}: ${txt.slice(0,300)}`); }
+  return resp.json();
+}
+
+// Encode where clause values — encode spaces/quotes but leave operators intact
+function encodeWhereClause(s) {
+  return s.replace(/ /g, '%20').replace(/'/g, '%27');
+}
+
+async function fetchAllJobs(company, params) {
+  let all = [], offset = 0;
+  setStatus('loading', 'Fetching jobs…');
+  while (true) {
+    const page = await apiFetch(company, '/ext/v1/jobs/search', { ...params, limit: 200, offset });
+    const vals = page.values || [];
+    all = all.concat(vals);
+    setStatus('loading', `Fetched ${all.length} jobs…`);
+    if (!page.hasMore || vals.length === 0) break;
+    offset += 200;
+  }
+  return all;
+}
+
+async function buildInvoiceDateMap(company, jobs) {
+  const invoiceToCustomer = new Map();
+  jobs.forEach(job => {
+    const custUuid = job.customer?.uuid;
+    if (!custUuid) return;
+    (job.jobLines || []).forEach(line => {
+      if (line.customerInvoiceUuid && !invoiceToCustomer.has(line.customerInvoiceUuid))
+        invoiceToCustomer.set(line.customerInvoiceUuid, custUuid);
+    });
+  });
+  const total = invoiceToCustomer.size;
+  if (total === 0) return new Map();
+  setStatus('loading', `Fetching invoice dates (0 / ${total})…`);
+  const map = new Map();
+  const entries = Array.from(invoiceToCustomer.entries());
+  const BATCH = 20;
+  for (let i = 0; i < entries.length; i += BATCH) {
+    const batch = entries.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(([invUuid, custUuid]) => apiFetch(company, `/ext/v1/customers/${custUuid}/invoices/${invUuid}`))
+    );
+    results.forEach((r, idx) => {
+      if (r.status === 'fulfilled' && r.value?.date) map.set(batch[idx][0], r.value.date);
+    });
+    setStatus('loading', `Fetching invoice dates (${Math.min(i + BATCH, total)} / ${total})…`);
+  }
+  return map;
+}
+
+// ── Run ───────────────────────────────────────────────────────
+async function runReport() {
+  const company = getActive();
+  if (!company) { setStatus('error', 'Select a company first'); return; }
+  reportData = null;
+  setExportEnabled(false);
+  document.getElementById('runBtn').disabled = true;
+  try {
+    if (reportType === 'jmcomp2') await runJobCostings(company);
+    else await runJobSalesByType(company);
+  } catch(e) {
+    showError(e.message); setStatus('error', 'Error: ' + e.message);
+  } finally {
+    document.getElementById('runBtn').disabled = false;
+  }
+}
+
+// ── Job Costings ──────────────────────────────────────────────
+async function runJobCostings(company) {
+  const from         = document.getElementById('f_from').value;
+  const to           = document.getElementById('f_to').value;
+  const typeUuid     = document.getElementById('f_type')?.value;
+  const statusFilter = document.getElementById('f_status')?.value;
+  const openFilter   = document.getElementById('f_open')?.value;
+  const where = [];
+  if (from) where.push(`LINE_DATE >= '${from}'`);
+  if (to)   where.push(`LINE_DATE <= '${to}'`);
+  if (openFilter) where.push(`OPEN_STATUS = '${openFilter}'`);
+  let jobs = await fetchAllJobs(company, { includeLines: true, where });
+  if (typeUuid) jobs = jobs.filter(j => j.jobType?.uuid === typeUuid);
+  if (statusFilter) jobs = jobs.filter(j => j.invoicingStatus === statusFilter);
+  const jobData = jobs.map(job => {
+    const lines = (job.jobLines||[]).filter(l => !l.deletedTimestamp && !l.descriptiveLine && !l.separatorLine
+      && l.lineType !== 'SUBTITLE' && l.lineType !== 'NOTE' && l.lineType !== 'SEPARATOR');
+    const inDate = lines.filter(l => (!from || l.lineDate >= from) && (!to || l.lineDate <= to));
+    const prdMat  = inDate.filter(l => l.jobLineCategory==='PRODUCT').reduce((s,l)=>s+(l.gstExclusiveAmount||0),0);
+    const prdLab  = inDate.filter(l => l.jobLineCategory==='LABOUR').reduce((s,l)=>s+(l.gstExclusiveAmount||0),0);
+    const prdCost = prdMat + prdLab;
+    const prdInv  = inDate.filter(l => l.status==='INVOICED'||l.status==='INVOICED_AS_QUOTED').reduce((s,l)=>s+(l.gstExclusiveAmount||0),0);
+    return { jobNumber:job.jobNumber, title:job.title||'', customer:job.customer?.name||'',
+      jobType:job.jobType?.name||'(No type)', status:job.invoicingStatus||'', prdMat, prdLab, prdCost, prdInv };
+  }).filter(j => j.prdCost!==0 || j.prdInv!==0);
+  const byType = {};
+  jobData.forEach(j => {
+    if (!byType[j.jobType]) byType[j.jobType]={jobs:[],statuses:{}};
+    byType[j.jobType].jobs.push(j);
+    const sk=j.status||'UNKNOWN';
+    if (!byType[j.jobType].statuses[sk]) byType[j.jobType].statuses[sk]=[];
+    byType[j.jobType].statuses[sk].push(j);
+  });
+  reportData = { type:'jmcomp2', byType, jobData, from, to, company: company.name };
+  renderJobCostings(reportData);
+  setStatus('', `${jobData.length} jobs — line date ${from} to ${to}`);
+  setExportEnabled(true);
+}
+
+// ── Job Sales by Type ─────────────────────────────────────────
+async function runJobSalesByType(company) {
+  const from     = document.getElementById('f_from').value;
+  const to       = document.getElementById('f_to').value;
+  const typeUuid = document.getElementById('f_type')?.value;
+  const openFilter = document.getElementById('f_open')?.value;
+  const where = [];
+  if (openFilter) where.push(`OPEN_STATUS = '${openFilter}'`);
+  let jobs = await fetchAllJobs(company, { includeLines: true, where });
+  if (typeUuid) jobs = jobs.filter(j => j.jobType?.uuid === typeUuid);
+  const invoiceDateMap = await buildInvoiceDateMap(company, jobs);
+  setStatus('loading', 'Calculating…');
+  const jobData = jobs.map(job => {
+    const lines = (job.jobLines||[]).filter(l => !l.deletedTimestamp && !l.descriptiveLine && !l.separatorLine
+      && l.lineType !== 'SUBTITLE' && l.lineType !== 'NOTE' && l.lineType !== 'SEPARATOR');
+    const inDateLines = lines.filter(l => {
+      if (!l.customerInvoiceUuid) return false;
+      const d = invoiceDateMap.get(l.customerInvoiceUuid);
+      return d && (!from || d >= from) && (!to || d <= to);
+    });
+    const invoiced = inDateLines.reduce((s,l)=>s+(l.gstExclusiveAmount||0),0);
+    return { jobNumber:job.jobNumber, title:job.title||'', customer:job.customer?.name||'',
+      jobType:job.jobType?.name||'(No type)', jobStatus:formatInvStatus(job.invoicingStatus),
+      assignedTo:job.assignedStaff?.name||'', invoiced };
+  }).filter(j => j.invoiced!==0);
+  const byType = {};
+  jobData.forEach(j => { if (!byType[j.jobType]) byType[j.jobType]=[]; byType[j.jobType].push(j); });
+  const unmapped = jobs.reduce((n,job)=>n+(job.jobLines||[]).filter(l=>l.customerInvoiceUuid&&!invoiceDateMap.has(l.customerInvoiceUuid)).length,0);
+  reportData = { type:'jobtypeinv', byType, jobData, from, to, unmapped, company: company.name };
+  renderJobSalesByType(reportData);
+  setStatus('', `${jobData.length} jobs — invoice date ${from} to ${to} — ${invoiceDateMap.size} invoices resolved`);
+  setExportEnabled(true);
+}
+
+// ── Render ────────────────────────────────────────────────────
+function renderJobCostings({ byType, jobData, from, to, company }) {
+  let grandMat=0,grandLab=0,grandCost=0,grandInv=0,rows='';
+  Object.keys(byType).sort().forEach(typeName => {
+    const grp=byType[typeName];
+    const tM=grp.jobs.reduce((s,j)=>s+j.prdMat,0),tL=grp.jobs.reduce((s,j)=>s+j.prdLab,0),
+          tC=grp.jobs.reduce((s,j)=>s+j.prdCost,0),tI=grp.jobs.reduce((s,j)=>s+j.prdInv,0);
+    grandMat+=tM;grandLab+=tL;grandCost+=tC;grandInv+=tI;
+    rows+=`<tr class="row-group-header"><td colspan="7">${esc(typeName)}</td></tr>`;
+    Object.keys(grp.statuses).sort().forEach(sName=>{
+      const sJ=grp.statuses[sName],sM=sJ.reduce((s,j)=>s+j.prdMat,0),sL=sJ.reduce((s,j)=>s+j.prdLab,0),
+            sC=sJ.reduce((s,j)=>s+j.prdCost,0),sI=sJ.reduce((s,j)=>s+j.prdInv,0);
+      rows+=`<tr class="row-status-header"><td colspan="7" style="font-size:11px">${statusLabel(sName)}</td></tr>`;
+      sJ.forEach(j=>rows+=`<tr><td>${esc(j.jobNumber)}</td><td>${esc(j.customer)}</td><td>${esc(j.title)}</td><td class="num">${fmt(j.prdMat)}</td><td class="num">${fmt(j.prdLab)}</td><td class="num">${fmt(j.prdCost)}</td><td class="num">${fmt(j.prdInv)}</td></tr>`);
+      rows+=`<tr class="row-status-subtotal"><td colspan="3" style="text-align:right;padding-right:12px">Subtotal — ${statusLabel(sName)}</td><td class="num">${fmt(sM)}</td><td class="num">${fmt(sL)}</td><td class="num">${fmt(sC)}</td><td class="num">${fmt(sI)}</td></tr>`;
+    });
+    rows+=`<tr class="row-subtotal"><td colspan="3" style="text-align:right;padding-right:12px">Total — ${esc(typeName)}</td><td class="num">${fmt(tM)}</td><td class="num">${fmt(tL)}</td><td class="num">${fmt(tC)}</td><td class="num">${fmt(tI)}</td></tr>`;
+  });
+  rows+=`<tr class="row-total"><td colspan="3" style="text-align:right;padding-right:12px">Report Grand Total</td><td class="num">${fmt(grandMat)}</td><td class="num">${fmt(grandLab)}</td><td class="num">${fmt(grandCost)}</td><td class="num">${fmt(grandInv)}</td></tr>`;
+  document.getElementById('content').innerHTML=`
+    <div class="report-meta">
+      <span class="meta-chip">${esc(company)}</span>
+      <span class="meta-chip">Line date: ${from} to ${to}</span>
+      <span class="meta-chip">${jobData.length} jobs</span>
+      <span class="meta-chip">Generated ${new Date().toLocaleString()}</span>
+    </div>
+    <div class="report-wrap">
+      <div class="report-title-bar"><h3>Job Costings</h3><p>Period costs by job type and status — filtered by line date</p></div>
+      <div style="overflow-x:auto"><table id="reportTable">
+        <thead><tr><th>Job</th><th>Customer</th><th>Title</th><th class="num">Materials</th><th class="num">Labour</th><th class="num">Period Cost</th><th class="num">Period Invoiced</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function renderJobSalesByType({ byType, jobData, from, to, unmapped, company }) {
+  let grand=0,rows='';
+  Object.keys(byType).sort().forEach(typeName=>{
+    const g=byType[typeName],tot=g.reduce((s,j)=>s+j.invoiced,0);grand+=tot;
+    rows+=`<tr class="row-group-header"><td colspan="6">${esc(typeName)}</td></tr>`;
+    g.forEach(j=>rows+=`<tr><td>${esc(j.jobNumber)}</td><td>${esc(j.customer)}</td><td>${esc(j.title)}</td><td>${esc(j.jobStatus)}</td><td>${esc(j.assignedTo)}</td><td class="num">${fmt(j.invoiced)}</td></tr>`);
+    rows+=`<tr class="row-subtotal"><td colspan="5" style="text-align:right;padding-right:12px">Total — ${esc(typeName)}</td><td class="num">${fmt(tot)}</td></tr>`;
+  });
+  rows+=`<tr class="row-total"><td colspan="5" style="text-align:right;padding-right:12px">Grand Total</td><td class="num">${fmt(grand)}</td></tr>`;
+  const warn=unmapped>0?`<div class="warn-box">⚠ ${unmapped} job line(s) could not be matched to an invoice and were excluded — these are likely lines not yet invoiced.</div>`:'';
+  document.getElementById('content').innerHTML=`
+    <div class="report-meta">
+      <span class="meta-chip">${esc(company)}</span>
+      <span class="meta-chip">Invoice date: ${from} to ${to}</span>
+      <span class="meta-chip">${jobData.length} jobs</span>
+      <span class="meta-chip">Generated ${new Date().toLocaleString()}</span>
+    </div>
+    ${warn}
+    <div class="report-wrap">
+      <div class="report-title-bar"><h3>Job Sales by Job Type</h3><p>Invoiced amounts by true invoice date — grouped by job type</p></div>
+      <div style="overflow-x:auto"><table id="reportTable">
+        <thead><tr><th>Job</th><th>Customer</th><th>Title</th><th>Status</th><th>Assigned To</th><th class="num">Invoiced (ex. GST)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// ── Export ────────────────────────────────────────────────────
+function exportExcel() {
+  if (!reportData) return;
+  const wb = XLSX.utils.book_new();
+  if (reportData.type==='jmcomp2') {
+    const rows=[['Job','Customer','Title','Job Type','Status','Materials (ex GST)','Labour (ex GST)','Period Cost (ex GST)','Period Invoiced (ex GST)']];
+    Object.keys(reportData.byType).sort().forEach(t=>{
+      const g=reportData.byType[t];
+      Object.keys(g.statuses).sort().forEach(s=>{
+        g.statuses[s].forEach(j=>rows.push([j.jobNumber,j.customer,j.title,t,statusLabel(s),j.prdMat,j.prdLab,j.prdCost,j.prdInv]));
+        rows.push(['','','','','SUBTOTAL — '+statusLabel(s),g.statuses[s].reduce((a,j)=>a+j.prdMat,0),g.statuses[s].reduce((a,j)=>a+j.prdLab,0),g.statuses[s].reduce((a,j)=>a+j.prdCost,0),g.statuses[s].reduce((a,j)=>a+j.prdInv,0)]);
+      });
+      rows.push(['','','','TOTAL — '+t,'',g.jobs.reduce((a,j)=>a+j.prdMat,0),g.jobs.reduce((a,j)=>a+j.prdLab,0),g.jobs.reduce((a,j)=>a+j.prdCost,0),g.jobs.reduce((a,j)=>a+j.prdInv,0)]);
+    });
+    const d=reportData.jobData;
+    rows.push(['GRAND TOTAL','','','','',d.reduce((a,j)=>a+j.prdMat,0),d.reduce((a,j)=>a+j.prdLab,0),d.reduce((a,j)=>a+j.prdCost,0),d.reduce((a,j)=>a+j.prdInv,0)]);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Job Costings');
+  } else {
+    const rows=[['Job','Customer','Title','Job Type','Status','Assigned To','Invoiced (ex GST)']];
+    Object.keys(reportData.byType).sort().forEach(t=>{
+      reportData.byType[t].forEach(j=>rows.push([j.jobNumber,j.customer,j.title,t,j.jobStatus,j.assignedTo,j.invoiced]));
+      rows.push(['','','','TOTAL — '+t,'','',reportData.byType[t].reduce((a,j)=>a+j.invoiced,0)]);
+    });
+    rows.push(['GRAND TOTAL','','','','','',reportData.jobData.reduce((a,j)=>a+j.invoiced,0)]);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Job Sales by Type');
+  }
+  const d=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,(reportData.type==='jmcomp2'?'job_costings':'job_sales_by_type')+'_'+reportData.company.replace(/\s+/g,'_')+'_'+d+'.xlsx');
+}
+
+function exportPDF() {
+  if (!reportData) return;
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const dt=new Date().toLocaleString();
+  if (reportData.type==='jmcomp2') {
+    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.text('Job Costings',14,16);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    doc.text(`${reportData.company}   |   Line date: ${reportData.from} to ${reportData.to}   |   Generated: ${dt}`,14,22);
+    const body=[];
+    Object.keys(reportData.byType).sort().forEach(t=>{
+      const g=reportData.byType[t];
+      body.push([{content:t.toUpperCase(),colSpan:7,styles:{fillColor:[240,240,235],fontStyle:'bold',fontSize:9}}]);
+      Object.keys(g.statuses).sort().forEach(s=>{
+        body.push([{content:statusLabel(s),colSpan:7,styles:{fillColor:[230,241,251],fontSize:9}}]);
+        g.statuses[s].forEach(j=>body.push([j.jobNumber,j.customer,j.title,fmt(j.prdMat),fmt(j.prdLab),fmt(j.prdCost),fmt(j.prdInv)]));
+        body.push([{content:'Subtotal — '+statusLabel(s),colSpan:3,styles:{fontStyle:'bold',fontSize:9}},fmt(g.statuses[s].reduce((a,j)=>a+j.prdMat,0)),fmt(g.statuses[s].reduce((a,j)=>a+j.prdLab,0)),fmt(g.statuses[s].reduce((a,j)=>a+j.prdCost,0)),fmt(g.statuses[s].reduce((a,j)=>a+j.prdInv,0))]);
+      });
+      body.push([{content:'Total — '+t,colSpan:3,styles:{fontStyle:'bold',fillColor:[255,251,242]}},{content:fmt(g.jobs.reduce((a,j)=>a+j.prdMat,0)),styles:{fontStyle:'bold',fillColor:[255,251,242]}},{content:fmt(g.jobs.reduce((a,j)=>a+j.prdLab,0)),styles:{fontStyle:'bold',fillColor:[255,251,242]}},{content:fmt(g.jobs.reduce((a,j)=>a+j.prdCost,0)),styles:{fontStyle:'bold',fillColor:[255,251,242]}},{content:fmt(g.jobs.reduce((a,j)=>a+j.prdInv,0)),styles:{fontStyle:'bold',fillColor:[255,251,242]}}]);
+    });
+    const d=reportData.jobData;
+    body.push([{content:'GRAND TOTAL',colSpan:3,styles:{fontStyle:'bold',fillColor:[230,230,225]}},{content:fmt(d.reduce((a,j)=>a+j.prdMat,0)),styles:{fontStyle:'bold',fillColor:[230,230,225]}},{content:fmt(d.reduce((a,j)=>a+j.prdLab,0)),styles:{fontStyle:'bold',fillColor:[230,230,225]}},{content:fmt(d.reduce((a,j)=>a+j.prdCost,0)),styles:{fontStyle:'bold',fillColor:[230,230,225]}},{content:fmt(d.reduce((a,j)=>a+j.prdInv,0)),styles:{fontStyle:'bold',fillColor:[230,230,225]}}]);
+    doc.autoTable({startY:26,head:[['Job','Customer','Title','Materials','Labour','Period Cost','Period Invoiced']],body,styles:{fontSize:8,cellPadding:2},headStyles:{fillColor:[80,80,75],textColor:255,fontStyle:'bold'},columnStyles:{0:{cellWidth:20},1:{cellWidth:40},2:{cellWidth:50},3:{halign:'right',cellWidth:25},4:{halign:'right',cellWidth:25},5:{halign:'right',cellWidth:25},6:{halign:'right',cellWidth:28}}});
+  } else {
+    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.text('Job Sales by Job Type',14,16);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    doc.text(`${reportData.company}   |   Invoice date: ${reportData.from} to ${reportData.to}   |   Generated: ${dt}`,14,22);
+    const body=[];
+    Object.keys(reportData.byType).sort().forEach(t=>{
+      body.push([{content:t.toUpperCase(),colSpan:6,styles:{fillColor:[240,240,235],fontStyle:'bold',fontSize:9}}]);
+      reportData.byType[t].forEach(j=>body.push([j.jobNumber,j.customer,j.title,j.jobStatus,j.assignedTo,fmt(j.invoiced)]));
+      body.push([{content:'Total — '+t,colSpan:5,styles:{fontStyle:'bold',fillColor:[255,251,242]}},{content:fmt(reportData.byType[t].reduce((a,j)=>a+j.invoiced,0)),styles:{fontStyle:'bold',fillColor:[255,251,242]}}]);
+    });
+    body.push([{content:'GRAND TOTAL',colSpan:5,styles:{fontStyle:'bold',fillColor:[230,230,225]}},{content:fmt(reportData.jobData.reduce((a,j)=>a+j.invoiced,0)),styles:{fontStyle:'bold',fillColor:[230,230,225]}}]);
+    doc.autoTable({startY:26,head:[['Job','Customer','Title','Status','Assigned To','Invoiced (ex GST)']],body,styles:{fontSize:8,cellPadding:2},headStyles:{fillColor:[80,80,75],textColor:255,fontStyle:'bold'},columnStyles:{0:{cellWidth:20},1:{cellWidth:45},2:{cellWidth:60},3:{cellWidth:30},4:{cellWidth:35},5:{halign:'right',cellWidth:30}}});
+  }
+  const d=new Date().toISOString().slice(0,10);
+  doc.save((reportData.type==='jmcomp2'?'job_costings':'job_sales_by_type')+'_'+reportData.company.replace(/\s+/g,'_')+'_'+d+'.pdf');
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function isValidUUID(s) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s||''); }
+function fmt(n) { return (n||0).toLocaleString('en-NZ',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function statusLabel(s) { return {INVOICED:'Invoiced',READY_TO_INVOICE:'Ready to invoice',AWAITING_APPROVAL:'Awaiting approval',NOT_READY:'Not ready'}[s]||s||'Unknown'; }
+function formatInvStatus(s) { return {INVOICED:'Invoiced',READY_TO_INVOICE:'Ready to Invoice',AWAITING_APPROVAL:'Awaiting Approval',NOT_READY:'Not Ready'}[s]||s||''; }
+function setStatus(type,msg) { const b=document.getElementById('statusBar');b.textContent=msg;b.className='status-bar'+(type?' '+type:''); }
+function setExportEnabled(on) { document.getElementById('xlsBtn').disabled=!on;document.getElementById('pdfBtn').disabled=!on; }
+function showError(msg) { document.getElementById('content').innerHTML=`<div class="error-box"><h4>Error fetching data</h4><p>${esc(msg)}</p><p>Check that the session UUID for this company is still valid, or re-add the company with a fresh session UUID.</p></div>`; }
+
+// ── Init ──────────────────────────────────────────────────────
+function init() {
+  loadCompanies();
+  renderCompanyList();
+  buildFilters();
+  if (activeCompanyId) {
+    document.getElementById('toolbarCompany').textContent = getActive()?.name || '';
+    loadJobTypes();
+  }
+  showReadyState();
+}
+
+init();
+</script>
+</body>
+</html>
